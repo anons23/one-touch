@@ -1,0 +1,6 @@
+{
+  "appId": "ru.anons23.onetouch",
+  "appName": "Одно касание",
+  "webDir": "www",
+  "android": { "allowMixedContent": false }
+}
