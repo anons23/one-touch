@@ -4,6 +4,8 @@ import { Platform } from './platform.js';
 import { Sound } from './audio.js';
 import { Analytics } from './analytics.js';
 import { t, setLang, applyStatic } from './i18n.js';
+import * as Skins from './skins.js';
+import { createShop } from './shop.js';
 
 const W = ARENA.w, H = ARENA.h;
 const $ = (id) => document.getElementById(id);
@@ -12,7 +14,11 @@ const TEST_UNLOCK_ALL = true;
 const UNLOCK_ALL = TEST_UNLOCK_ALL || /[?&]unlock=1/.test(location.search);
 const SPEED = 0.6;
 
-const makeDefaults = () => ({ stars: [], sound: true, music: true, freeHints: 0, daily: { last: '', streak: 0, best: 0 } });
+const makeDefaults = () => ({
+  stars: [], sound: true, music: true, freeHints: 0, daily: { last: '', streak: 0, best: 0 },
+  coins: 0, owned: { cannon: ['classic'], ball: ['classic'], dot: ['classic'] }, equip: { cannon: 'classic', ball: 'classic', dot: 'classic' },
+  adProg: {}, coinAds: { day: '', n: 0 },
+});
 let save = makeDefaults();
 const persist = () => Platform.writeSave(save);
 
@@ -178,25 +184,11 @@ function drawPortals(now) {
 }
 
 function drawDots(now) {
-  level.dots.forEach((d, i) => {
-    if (hit[i]) return;
-    const r = DOT_R * (0.72 + 0.08 * Math.sin(now * 0.005 + i));
-    ctx.lineWidth = 1.5; ctx.strokeStyle = rgba(zone.dot, 0.45); ctx.beginPath(); ctx.arc(d.x, d.y, r, 0, 6.2832); ctx.stroke();
-    ctx.fillStyle = rgba(zone.dot, 0.22); ctx.beginPath(); ctx.arc(d.x, d.y, 11, 0, 6.2832); ctx.fill();
-    ctx.fillStyle = zone.dot; ctx.beginPath(); ctx.arc(d.x, d.y, 6, 0, 6.2832); ctx.fill();
-  });
+  level.dots.forEach((d, i) => { if (!hit[i]) Skins.drawDot(ctx, save.equip.dot, d.x, d.y, zone, now, i); });
 }
 
-function drawStart() {
-  const s = level.start;
-  ctx.lineWidth = 2; ctx.strokeStyle = rgba(zone.line, 0.55); ctx.beginPath(); ctx.arc(s.x, s.y, 15, 0, 6.2832); ctx.stroke();
-  ctx.fillStyle = zone.fg; ctx.beginPath(); ctx.arc(s.x, s.y, 8, 0, 6.2832); ctx.fill();
-  if (mode === 'aim') {
-    const a = (angle * Math.PI) / 180, dx = Math.cos(a), dy = -Math.sin(a), px = -dy, py = dx;
-    const tx = s.x + dx * 26, ty = s.y + dy * 26;
-    ctx.fillStyle = zone.line; ctx.beginPath();
-    ctx.moveTo(tx + dx * 7, ty + dy * 7); ctx.lineTo(tx + px * 5, ty + py * 5); ctx.lineTo(tx - px * 5, ty - py * 5); ctx.closePath(); ctx.fill();
-  }
+function drawStart(now) {
+  Skins.drawCannon(ctx, save.equip.cannon, level.start.x, level.start.y, angle, zone, now, mode === 'aim');
 }
 
 function drawAim() {
@@ -210,15 +202,10 @@ function drawAim() {
   ctx.globalAlpha = 1;
 }
 
-function drawTrail() {
-  ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+function drawTrail(now) {
   const upto = Math.floor(fidx);
-  [[11, 0.12], [5, 0.3], [2.2, 1]].forEach(([w, a]) => { ctx.lineWidth = w; ctx.strokeStyle = rgba(zone.line, a); trace(flight, upto, ctx); ctx.stroke(); });
-  ctx.restore();
-  const p = flight[upto];
-  const g = ctx.createRadialGradient(p.x, p.y, 1, p.x, p.y, 18);
-  g.addColorStop(0, '#ffffff'); g.addColorStop(0.3, rgba(zone.line, 0.8)); g.addColorStop(1, rgba(zone.line, 0));
-  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(p.x, p.y, 18, 0, 6.2832); ctx.fill();
+  Skins.drawTrail(ctx, save.equip.ball, flight, upto, zone, now);
+  Skins.drawHead(ctx, save.equip.ball, flight[upto].x, flight[upto].y, zone, now);
 }
 
 function draw(now) {
@@ -235,8 +222,8 @@ function draw(now) {
   drawPortals(now);
   drawDots(now);
   if (mode === 'aim') drawAim();
-  if (flight && mode !== 'aim') drawTrail();
-  drawStart();
+  if (flight && mode !== 'aim') drawTrail(now);
+  drawStart(now);
   if (particles.length) {
     ctx.save(); ctx.globalCompositeOperation = 'lighter';
     particles.forEach((q) => {
@@ -269,11 +256,11 @@ function step(dt) {
     } else if (p.e === 'glass') {
       broken[p.i] = true; shards(level.obstacles[p.i]); Sound.glass(); shakeUntil = performance.now() + 140; buzz(15);
     } else if (p.e) {
-      burst(p.x, p.y, zone.line, 7, 0.1, 320); Sound.bounce(p.b, p.e);
+      burst(p.x, p.y, Skins.ballColor(save.equip.ball, zone), 7, 0.1, 320); Sound.bounce(p.b, p.e);
     }
     level.dots.forEach((d, i) => {
       if (!hit[i] && Math.hypot(p.x - d.x, p.y - d.y) <= DOT_R) {
-        hit[i] = true; burst(d.x, d.y, zone.dot, 18, 0.16, 600);
+        hit[i] = true; burst(d.x, d.y, Skins.dotColor(save.equip.dot, zone), 18, 0.16, 600);
         Sound.dot(hit.filter(Boolean).length - 1); buzz(10);
       }
     });
@@ -287,7 +274,7 @@ function fire() {
   mode = 'fly'; hintPath = null;
   flight = simulate(level, angle, level.maxBounces);
   fidx = 0; hit = level.dots.map(() => false); broken = level.obstacles.map(() => false);
-  burst(level.start.x, level.start.y, zone.line, 10, 0.12, 300);
+  burst(level.start.x, level.start.y, Skins.ballColor(save.equip.ball, zone), 10, 0.12, 300);
   Sound.launch();
   setStatus(t('flying'));
 }
@@ -325,7 +312,9 @@ function win() {
 function winLevel(secs) {
   const i = level.index;
   const stars = hintUsed ? 1 : attempts <= 1 ? 3 : attempts <= 3 ? 2 : 1;
-  save.stars[i] = Math.max(save.stars[i] || 0, stars);
+  const old = save.stars[i] || 0;
+  save.stars[i] = Math.max(old, stars);
+  giveCoins(old === 0 ? stars * 10 : stars > old ? (stars - old) * 10 : 2);
   $('win-title').textContent = t('winTitle');
   $('win-stars').textContent = '★'.repeat(stars) + '☆'.repeat(3 - stars);
   $('win-info').textContent = t('winInfo', { n: attempts });
@@ -340,12 +329,32 @@ function winDaily(secs) {
     d.best = Math.max(d.best || 0, d.streak); d.last = today;
     save.freeHints = Math.min(5, (save.freeHints || 0) + 1);
   }
+  giveCoins(first ? 50 : 0);
   $('win-title').textContent = t('dailyDone');
   $('win-stars').textContent = t('streak', { n: d.streak });
   $('win-info').textContent = (first ? t('dailyReward') : t('dailyAgain')) + ' · ' + t('winInfo', { n: attempts });
   $('win-next').textContent = t('toMenu');
   if (first) Analytics.event('daily_win', { day: level.dayIdx, streak: d.streak, tries: attempts, sec: secs, hint: hintUsed });
 }
+
+let lastEarned = 0;
+function giveCoins(n) {
+  lastEarned = n; save.coins = (save.coins || 0) + n;
+  $('win-coins').innerHTML = n ? '<i class="coin"></i>' + t('earned', { n }) : '';
+  const dbl = $('win-double');
+  dbl.textContent = t('double'); dbl.classList.toggle('hidden', n < 10); dbl.disabled = false;
+}
+$('win-double').onclick = async () => {
+  const b = $('win-double');
+  if (b.disabled || lastEarned < 10) return;
+  b.disabled = true;
+  const ok = await withAd(() => Platform.showRewarded());
+  if (!ok) { b.disabled = false; return; }
+  save.coins += lastEarned; persist();
+  $('win-coins').innerHTML = '<i class="coin"></i>' + t('doubled', { n: lastEarned * 2 });
+  b.classList.add('hidden'); Sound.dot(5);
+  Analytics.event('coins_x2', { n: lastEarned });
+};
 
 async function withAd(fn) {
   const wasPlaying = $('screen-game').classList.contains('active') && mode === 'aim';
@@ -453,21 +462,19 @@ function drawMenu(now) {
   for (let i = 28; i < mw; i += 28) { mx.beginPath(); mx.moveTo(i, 0); mx.lineTo(i, mh); mx.stroke(); }
   for (let j = 28; j < mh; j += 28) { mx.beginPath(); mx.moveTo(0, j); mx.lineTo(mw, j); mx.stroke(); }
   mx.save(); mx.globalCompositeOperation = 'lighter'; mx.lineCap = 'round';
+  const bc = Skins.ballColor(save.equip.ball, zone);
   for (let i = 1; i < demo.trail.length; i++) {
     const a = i / demo.trail.length;
-    mx.strokeStyle = rgba(zone.line, 0.5 * a); mx.lineWidth = 1 + 3 * a;
+    mx.strokeStyle = save.equip.ball === 'rainbow' ? `hsla(${(i * 4 - now * 0.12) % 360},100%,62%,${0.5 * a})` : rgba(bc, 0.5 * a); mx.lineWidth = 1 + 3 * a;
     mx.beginPath(); mx.moveTo(demo.trail[i - 1].x, demo.trail[i - 1].y); mx.lineTo(demo.trail[i].x, demo.trail[i].y); mx.stroke();
   }
-  demo.dots.forEach((d, i) => {
-    mx.fillStyle = rgba(zone.dot, 0.25 + 0.15 * Math.sin(now * 0.004 + i)); mx.beginPath(); mx.arc(d.x, d.y, 10, 0, 6.28); mx.fill();
-    mx.fillStyle = zone.dot; mx.beginPath(); mx.arc(d.x, d.y, 4, 0, 6.28); mx.fill();
-  });
-  menuParticles.forEach((q) => { mx.globalAlpha = q.life / 600; mx.fillStyle = zone.dot; mx.beginPath(); mx.arc(q.x, q.y, 1.6, 0, 6.28); mx.fill(); });
-  mx.globalAlpha = 1;
-  const g = mx.createRadialGradient(demo.x, demo.y, 1, demo.x, demo.y, 16);
-  g.addColorStop(0, '#fff'); g.addColorStop(0.35, rgba(zone.line, 0.8)); g.addColorStop(1, rgba(zone.line, 0));
-  mx.fillStyle = g; mx.beginPath(); mx.arc(demo.x, demo.y, 16, 0, 6.28); mx.fill();
   mx.restore();
+  demo.dots.forEach((d, i) => Skins.drawDot(mx, save.equip.dot, d.x, d.y, zone, now, i, 0.8));
+  mx.save(); mx.globalCompositeOperation = 'lighter';
+  menuParticles.forEach((q) => { mx.globalAlpha = q.life / 600; mx.fillStyle = Skins.dotColor(save.equip.dot, zone); mx.beginPath(); mx.arc(q.x, q.y, 1.6, 0, 6.28); mx.fill(); });
+  mx.globalAlpha = 1;
+  mx.restore();
+  Skins.drawHead(mx, save.equip.ball, demo.x, demo.y, zone, now, 0.9);
 }
 
 function firstOpen() { for (let i = 0; i < LEVEL_COUNT; i++) if (!(save.stars[i] > 0)) return i; return LEVEL_COUNT - 1; }
@@ -480,6 +487,7 @@ function renderMenu() {
   const d = save.daily, done = d.last === todayKey(), alive = d.last === yesterdayKey() && d.streak > 0;
   $('daily-sub').textContent = done ? t('dailyDoneSub', { n: d.streak }) : alive ? t('dailyKeep', { n: d.streak }) : t('dailyNew');
   $('btn-daily').classList.toggle('fresh', !done);
+  $('coins-val').textContent = save.coins || 0;
   $('btn-sound').classList.toggle('off', !save.sound);
   $('btn-music').classList.toggle('off', !save.music);
 }
@@ -511,6 +519,13 @@ function openLevels() {
 $('btn-play').onclick = () => startLevel(firstOpen());
 $('btn-daily').onclick = startDaily;
 $('btn-levels').onclick = openLevels;
+const Shop = createShop({
+  $, t, save: () => save, persist, withAd, showRewarded: () => Platform.showRewarded(), Analytics, Sound,
+  zone: () => zone, show, todayKey, onChange: renderMenu,
+});
+$('btn-shop').onclick = () => Shop.open();
+$('chip-coins').onclick = () => Shop.open();
+$('shop-back').onclick = goMenu;
 $('levels-back').onclick = goMenu;
 $('game-back').onclick = () => {
   if (level && (mode === 'aim' || mode === 'fly' || mode === 'done')) {
@@ -523,8 +538,8 @@ $('btn-music').onclick = () => { save.music = !save.music; persist(); Sound.setM
 
 document.addEventListener('pointerdown', () => Sound.unlock(), true);
 document.addEventListener('click', (e) => {
-  const b = e.target.closest('.ctl, .round, .cell, .icon, .play-orb, .daily-card');
-  if (b && !['btn-fire', 'btn-minus', 'btn-plus'].includes(b.id)) Sound.ui();
+  const b = e.target.closest('.ctl, .round, .cell, .icon, .play-orb, .daily-card, .shop-tab, .skin-card, .coins-chip');
+  if (b && !['btn-fire', 'btn-minus', 'btn-plus', 'shop-action'].includes(b.id)) Sound.ui();
 }, true);
 document.addEventListener('contextmenu', (e) => e.preventDefault());
 document.addEventListener('visibilitychange', () => {
@@ -541,6 +556,7 @@ function loop(now) {
   if (document.hidden) return;
   if ($('screen-game').classList.contains('active')) { step(dt); draw(now); }
   else if ($('screen-menu').classList.contains('active') && mw) { stepMenu(dt); drawMenu(now); }
+  else if ($('screen-shop').classList.contains('active')) Shop.frame(now, dt);
 }
 requestAnimationFrame(loop);
 
@@ -550,6 +566,13 @@ async function boot() {
   save = await Platform.loadSave(makeDefaults());
   if (!save.daily || typeof save.daily !== 'object') save.daily = makeDefaults().daily;
   if (typeof save.freeHints !== 'number') save.freeHints = 0;
+  const def = makeDefaults();
+  if (typeof save.coins !== 'number') save.coins = 0;
+  for (const k of ['owned', 'equip', 'adProg', 'coinAds']) if (!save[k] || typeof save[k] !== 'object') save[k] = def[k];
+  for (const cat of ['cannon', 'ball', 'dot']) {
+    if (!Array.isArray(save.owned[cat])) save.owned[cat] = ['classic'];
+    if (!save.owned[cat].includes(save.equip[cat])) save.equip[cat] = 'classic';
+  }
   Sound.setSfx(save.sound); Sound.setMusic(save.music);
   renderMenu(); sizeMenu();
   Analytics.init(Platform.name);
@@ -563,7 +586,7 @@ async function boot() {
 boot();
 
 window.__ot = {
-  Sound, Platform, Analytics, startLevel, startDaily, fire,
+  Sound, Platform, Analytics, startLevel, startDaily, fire, openShop: () => Shop.open(),
   setAngle(a) { angle = a; },
   get state() { return { mode, angle, hit, attempts, level, fidx }; },
   get save() { return save; },

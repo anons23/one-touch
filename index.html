@@ -14,6 +14,7 @@
     <canvas id="menu-bg" aria-hidden="true"></canvas>
     <div class="menu-top">
       <span class="chip" id="chip-stars">★ 0</span>
+      <button class="chip coins-chip" id="chip-coins"><i class="coin"></i><span id="coins-val">0</span></button>
       <span class="chip" id="chip-prog">0 / 60</span>
     </div>
     <h1 class="neon-title"><span data-i18n="title1">ОДНО</span><span data-i18n="title2">КАСАНИЕ</span></h1>
@@ -29,6 +30,7 @@
     </button>
     <nav class="icon-row">
       <button id="btn-levels" class="round" data-i18n-aria="levels" aria-label="Уровни"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6" height="6" rx="1.5"/><rect x="14" y="4" width="6" height="6" rx="1.5"/><rect x="4" y="14" width="6" height="6" rx="1.5"/><rect x="14" y="14" width="6" height="6" rx="1.5"/></svg></button>
+      <button id="btn-shop" class="round shop" data-i18n-aria="shop" aria-label="Магазин"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 8h14l-1.2 11.2a1.5 1.5 0 0 1-1.5 1.3H7.7a1.5 1.5 0 0 1-1.5-1.3z"/><path d="M9 10V6.5a3 3 0 0 1 6 0V10"/></svg></button>
       <button id="btn-sound" class="round" data-i18n-aria="sound" aria-label="Звук"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h4l5-4v13l-5-4H4z"/><path class="wave" d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/><path class="slash" d="M3 3l18 18"/></svg></button>
       <button id="btn-music" class="round" data-i18n-aria="music" aria-label="Музыка"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V5.5l11-2V16"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/><path class="slash" d="M3 3l18 18"/></svg></button>
     </nav>
@@ -37,6 +39,21 @@
   <section id="screen-levels" class="screen">
     <header class="bar"><button id="levels-back" class="icon" data-i18n-aria="back" aria-label="Назад">&#8592;</button><span class="title" data-i18n="levels">Уровни</span><span></span></header>
     <div id="level-grid" class="levels"></div>
+  </section>
+
+  <section id="screen-shop" class="screen">
+    <header class="bar"><button id="shop-back" class="icon" data-i18n-aria="back" aria-label="Назад">&#8592;</button><span class="title" data-i18n="shop">Магазин</span><span class="chip"><i class="coin"></i><span id="shop-coins">0</span></span></header>
+    <canvas id="shop-preview"></canvas>
+    <div class="shop-tabs">
+      <button class="shop-tab active" data-tab="cannon" data-i18n="tabCannon">Пушка</button>
+      <button class="shop-tab" data-tab="ball" data-i18n="tabBall">Заряд</button>
+      <button class="shop-tab" data-tab="dot" data-i18n="tabDot">Точки</button>
+    </div>
+    <div id="shop-grid" class="shop-grid"></div>
+    <div class="shop-footer">
+      <button id="shop-action" class="ctl fire">Надето</button>
+      <button id="shop-coins-ad" class="coins-ad"></button>
+    </div>
   </section>
 
   <section id="screen-game" class="screen">
@@ -60,6 +77,8 @@
       <h2 id="win-title">Чисто!</h2>
       <p class="win-stars" id="win-stars"></p>
       <p class="win-info" id="win-info"></p>
+      <p class="win-coins" id="win-coins"></p>
+      <button id="win-double" class="coins-ad hidden"></button>
       <div class="sheet-buttons">
         <button id="win-retry" class="ctl" data-i18n="retry">Ещё раз</button>
         <button id="win-next" class="ctl fire">Дальше</button>
