@@ -1,14 +1,16 @@
-import { getLevel, LEVEL_COUNT } from '../js/levels.js';
-import { isSolved } from '../js/engine.js';
+import { LEVELS } from '../js/levels-data.js';
+import { DAILY } from '../js/daily-data.js';
+import { isSolved, simulate } from '../js/engine.js';
 let bad = 0;
-for (let i = 0; i < LEVEL_COUNT; i++) {
-  const t = Date.now();
-  const L = getLevel(i);
-  const solved = L && isSolved(L, L.secret);
-  let solvers = 0;
-  for (let a = 0; a < 360; a += 0.5) if (isSolved(L, a)) solvers++;
-  console.log(`#${i + 1} dots=${L.dots.length} obst=${L.obstacles.length} maxB=${L.maxBounces} width=${L.width.toFixed(1)}deg ok=${solved} solvingAngles(0.5deg steps)=${solvers} ${Date.now() - t}ms`);
-  if (!solved) bad++;
+for (const [name, set] of [['levels', LEVELS], ['daily', DAILY]]) {
+  let trivial = 0;
+  set.forEach((L, i) => {
+    const ok = isSolved(L, L.secret);
+    if (isSolved(L, 90)) trivial++;
+    if (!ok) { bad++; console.log('FAIL', name, i + 1); }
+    if (L.portals.length && !simulate(L, L.secret, L.maxBounces).some((p) => p.jump)) { bad++; console.log('portal unused', name, i + 1); }
+  });
+  console.log(name, set.length, 'checked; solved by default aim (90°):', trivial);
 }
-console.log(bad ? 'FAIL' : 'ALL SOLVABLE');
+console.log(bad ? 'FAIL ' + bad : 'ALL OK');
 process.exit(bad ? 1 : 0);
