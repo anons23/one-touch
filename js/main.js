@@ -6,6 +6,7 @@ import { Analytics } from './analytics.js';
 import { t, setLang, applyStatic } from './i18n.js';
 import * as Skins from './skins.js';
 import { createShop } from './shop.js';
+import { makeBonus, drawCoin, BONUS_ZONE, BONUS_SHOTS, PERFECT_FOR_BONUS, MILESTONE } from './bonus.js';
 
 const W = ARENA.w, H = ARENA.h;
 const $ = (id) => document.getElementById(id);
@@ -17,7 +18,7 @@ const SPEED = 0.6;
 const makeDefaults = () => ({
   stars: [], sound: true, music: true, freeHints: 0, daily: { last: '', streak: 0, best: 0 },
   coins: 0, owned: { cannon: ['classic'], ball: ['classic'], dot: ['classic'] }, equip: { cannon: 'classic', ball: 'classic', dot: 'classic' },
-  adProg: {}, coinAds: { day: '', n: 0 },
+  adProg: {}, coinAds: { day: '', n: 0 }, perfect: 0, milestones: [],
 });
 let save = makeDefaults();
 const persist = () => Platform.writeSave(save);
@@ -29,7 +30,8 @@ function setStatus(s) { $('hud-status').textContent = s; }
 
 let zone = ZONES[0], zoneIdx = 0, bgCache = null;
 function applyZone(i) {
-  zoneIdx = i; zone = ZONES[i]; bgCache = null;
+  const obj = typeof i === 'object';
+  zoneIdx = obj ? 2 : i; zone = obj ? i : ZONES[i]; bgCache = null; i = zoneIdx;
   const r = document.documentElement.style;
   r.setProperty('--bg1', zone.bg1); r.setProperty('--bg2', zone.bg2); r.setProperty('--fg', zone.fg); r.setProperty('--soft', zone.soft);
   r.setProperty('--accent', zone.line); r.setProperty('--wall', zone.wall); r.setProperty('--dot', zone.dot); r.setProperty('--portal', zone.portal);
@@ -88,19 +90,24 @@ let level = null, angle = 90, mode = 'aim', flight = null, fidx = 0, hit = [], b
 let attempts = 0, hintPath = null, hintUsed = false, lastPath = null, t0 = 0, finished = 0;
 let particles = [], shakeUntil = 0, winAt = 0, lastTickAngle = 90;
 
-function levelLabel() { return level.daily ? t('daily') : t('levelN', { n: level.index + 1 }); }
+function levelLabel() { return level.bonus ? t('bonus') : level.daily ? t('daily') : t('levelN', { n: level.index + 1 }); }
 function hintLabel() { $('btn-hint').textContent = save.freeHints > 0 ? t('hintFree', { n: save.freeHints }) : t('hint'); }
 function yesterdayKey() { const d = new Date(); d.setDate(d.getDate() - 1); return todayKey(d); }
 function maxReached() { let m = 0; save.stars.forEach((s, i) => { if (s > 0) m = i + 1; }); return m; }
 
+let shots = 0, bonusCoins = 0, extraUsed = false, popups = [], pendingBonus = null, bonusReturn = 0, sheetMode = 'win';
+
 function setup() {
-  applyZone(level.theme);
+  applyZone(level.bonus ? BONUS_ZONE : level.theme);
+  sheetMode = 'win'; popups = []; if (!level.bonus) pendingBonus = null;
+  $('win-retry').classList.remove('hidden');
+  $('btn-hint').classList.toggle('hidden', !!level.bonus);
   angle = 90; lastTickAngle = 90; mode = 'aim'; flight = null; fidx = 0; attempts = 0;
   hit = level.dots.map(() => false); broken = level.obstacles.map(() => false);
   hintPath = null; hintUsed = false; lastPath = null; particles = []; winAt = 0; t0 = Date.now();
   clearTimeout(winTimer); $('win').classList.add('hidden');
   $('hud-level').textContent = levelLabel();
-  $('hud-meta').textContent = t('bounces', { n: level.maxBounces });
+  $('hud-meta').textContent = level.bonus ? t('charges', { n: shots }) : t('bounces', { n: level.maxBounces });
   hintLabel();
   show('screen-game'); resize();
   Platform.gameplay(true);
@@ -114,6 +121,18 @@ function startLevel(i) {
   else if (i % 15 === 0 && i > 0) setStatus(t('newZone', { name: t('zone.' + level.theme) }));
   else setStatus(t('aim'));
   Analytics.event('level_start', { level: i + 1 });
+}
+
+function startBonus(reason, ret) {
+  level = makeBonus(); shots = BONUS_SHOTS; bonusCoins = 0; extraUsed = false; bonusReturn = ret; pendingBonus = null;
+  setup();
+  setStatus(t('bonusAim'));
+  const ban = $('bonus-banner');
+  $('bonus-why').textContent = reason.text;
+  ban.classList.remove('hidden'); ban.style.animation = 'none'; void ban.offsetWidth; ban.style.animation = '';
+  setTimeout(() => ban.classList.add('hidden'), 1800);
+  Sound.win();
+  Analytics.event('bonus_start', { reason: reason.id });
 }
 
 function startDaily() {
@@ -221,6 +240,7 @@ function draw(now) {
   drawObstacles();
   drawPortals(now);
   drawDots(now);
+  if (level.bonus) level.coins.forEach((c) => { if (!c.taken) drawCoin(ctx, c, now); });
   if (mode === 'aim') drawAim();
   if (flight && mode !== 'aim') drawTrail(now);
   drawStart(now);
@@ -233,6 +253,11 @@ function draw(now) {
     });
     ctx.restore();
   }
+  if (popups.length) {
+    ctx.save(); ctx.textAlign = 'center'; ctx.font = '800 15px system-ui,sans-serif';
+    popups.forEach((q) => { ctx.globalAlpha = Math.max(0, q.life / 900); ctx.fillStyle = q.big ? '#ffffff' : '#ffe082'; ctx.fillText(q.text, q.x, q.y); });
+    ctx.restore();
+  }
   if (winAt) {
     const k = Math.min(1, (now - winAt) / 700);
     ctx.fillStyle = rgba(zone.line, 0.25 * (1 - k)); ctx.fillRect(0, 0, W, H);
@@ -243,6 +268,8 @@ function draw(now) {
 function step(dt) {
   particles = particles.filter((q) => (q.life -= dt) > 0);
   particles.forEach((q) => { q.x += q.vx * dt; q.y += q.vy * dt; q.vx *= 0.985; q.vy *= 0.985; if (q.shard) { q.vy += 0.0004 * dt; q.rot += 0.01 * dt; } });
+  popups = popups.filter((q) => (q.life -= dt) > 0);
+  popups.forEach((q) => { q.y -= dt * 0.04; });
   if (mode !== 'fly') return;
   const prev = Math.floor(fidx);
   fidx = Math.min(flight.length - 1, fidx + dt * SPEED * (1 + fidx / 2500));
@@ -264,9 +291,20 @@ function step(dt) {
         Sound.dot(hit.filter(Boolean).length - 1); buzz(10);
       }
     });
-    if (hit.every(Boolean)) { fidx = k; win(); return; }
+    if (level.bonus) {
+      level.coins.forEach((c) => {
+        if (!c.taken && Math.hypot(p.x - c.x, p.y - c.y) <= c.r + 5) {
+          c.taken = true; bonusCoins += c.v;
+          burst(c.x, c.y, '#ffd54a', c.kind === 'coin' ? 8 : 22, c.kind === 'coin' ? 0.1 : 0.2, 500);
+          popups.push({ x: c.x, y: c.y - 8, text: '+' + c.v, life: 900, big: c.kind !== 'coin' });
+          Sound.dot(c.kind === 'chest' ? 9 : c.kind === 'big' ? 6 : Math.min(5, Math.floor(bonusCoins / 6)));
+          if (c.kind !== 'coin') { buzz(20); if (c.kind === 'chest') shakeUntil = performance.now() + 200; }
+          setStatus(t('collected', { n: bonusCoins }));
+        }
+      });
+    } else if (hit.every(Boolean)) { fidx = k; win(); return; }
   }
-  if (fidx >= flight.length - 1) miss();
+  if (fidx >= flight.length - 1) { if (level.bonus) bonusShotDone(); else miss(); }
 }
 
 function fire() {
@@ -277,6 +315,43 @@ function fire() {
   burst(level.start.x, level.start.y, Skins.ballColor(save.equip.ball, zone), 10, 0.12, 300);
   Sound.launch();
   setStatus(t('flying'));
+}
+
+function bonusShotDone() {
+  mode = 'done'; shots--; lastPath = flight;
+  $('hud-meta').textContent = t('charges', { n: shots });
+  const left = level.coins.filter((c) => !c.taken).length;
+  if (shots > 0 && left > 0) {
+    setTimeout(() => { if (mode !== 'done') return; mode = 'aim'; flight = null; broken = level.obstacles.map(() => false); }, 600);
+    return;
+  }
+  if (left > 0 && !extraUsed) {
+    sheetMode = 'offer';
+    $('win-title').textContent = t('extraTitle');
+    $('win-stars').innerHTML = '<span class="num"><i class="coin"></i>' + bonusCoins + '</span>';
+    $('win-info').textContent = t('extraInfo', { n: left });
+    $('win-coins').innerHTML = ''; $('win-double').classList.add('hidden');
+    $('win-retry').textContent = t('take', { n: bonusCoins }); $('win-next').textContent = t('extraAd');
+    Platform.gameplay(false);
+    winTimer = setTimeout(() => $('win').classList.remove('hidden'), 700);
+    return;
+  }
+  finishBonus();
+}
+
+function finishBonus() {
+  mode = 'won'; sheetMode = 'bonusEnd'; winAt = performance.now();
+  Platform.gameplay(false);
+  $('win').classList.add('hidden');
+  $('win-title').textContent = t('bonusEnd');
+  $('win-stars').innerHTML = '<span class="num"><i class="coin"></i>' + bonusCoins + '</span>';
+  $('win-info').textContent = t('bonusInfo');
+  giveCoins(bonusCoins); persist();
+  $('win-retry').classList.add('hidden');
+  $('win-next').textContent = bonusReturn < LEVEL_COUNT ? t('next') : t('toLevels');
+  burst(W / 2, H / 2, '#ffd54a', 50, 0.3, 900); Sound.win();
+  Analytics.event('bonus_end', { coins: bonusCoins, extra: extraUsed });
+  winTimer = setTimeout(() => $('win').classList.remove('hidden'), 700);
 }
 
 function miss() {
@@ -304,7 +379,7 @@ function win() {
   setStatus(t('allDone'));
   const lvl = level;
   winTimer = setTimeout(async () => {
-    if (finished % 3 === 0 && await withAd(() => Platform.showInterstitial())) Analytics.event('ad_interstitial');
+    if (!pendingBonus && finished % 3 === 0 && await withAd(() => Platform.showInterstitial())) Analytics.event('ad_interstitial');
     if (level === lvl && mode === 'won') $('win').classList.remove('hidden');
   }, 1000);
 }
@@ -315,10 +390,16 @@ function winLevel(secs) {
   const old = save.stars[i] || 0;
   save.stars[i] = Math.max(old, stars);
   giveCoins(old === 0 ? stars * 10 : stars > old ? (stars - old) * 10 : 2);
+  const perfect = attempts === 1 && !hintUsed;
+  save.perfect = perfect ? (save.perfect || 0) + 1 : 0;
+  const cleared = save.stars.filter((s) => s > 0).length;
+  pendingBonus = null;
+  if (save.perfect >= PERFECT_FOR_BONUS) { pendingBonus = { id: 'streak', text: t('bonusWhyStreak') }; save.perfect = 0; }
+  else if (old === 0 && cleared % MILESTONE === 0 && !save.milestones.includes(cleared)) { pendingBonus = { id: 'milestone', text: t('bonusWhyMilestone', { n: cleared }) }; save.milestones.push(cleared); }
   $('win-title').textContent = t('winTitle');
   $('win-stars').textContent = '★'.repeat(stars) + '☆'.repeat(3 - stars);
-  $('win-info').textContent = t('winInfo', { n: attempts });
-  $('win-next').textContent = i + 1 < LEVEL_COUNT ? t('next') : t('toLevels');
+  $('win-info').textContent = t('winInfo', { n: attempts }) + (!pendingBonus && save.perfect > 0 ? ' · ' + t('perfectProg', { n: save.perfect }) : '');
+  $('win-next').textContent = pendingBonus ? t('toBonus') : i + 1 < LEVEL_COUNT ? t('next') : t('toLevels');
   Analytics.event('level_win', { level: i + 1, tries: attempts, sec: secs, hint: hintUsed, stars });
 }
 
@@ -422,12 +503,32 @@ document.addEventListener('keydown', (e) => {
   e.preventDefault();
 });
 
-$('win-next').onclick = () => {
+$('win-next').onclick = async () => {
+  if (sheetMode === 'offer') {
+    const b = $('win-next');
+    if (b.disabled) return;
+    b.disabled = true;
+    const ok = await withAd(() => Platform.showRewarded());
+    b.disabled = false;
+    if (!ok) return;
+    extraUsed = true; shots = 1;
+    Analytics.event('bonus_extra_ad');
+    $('win').classList.add('hidden');
+    $('hud-meta').textContent = t('charges', { n: shots });
+    mode = 'aim'; flight = null; broken = level.obstacles.map(() => false);
+    Platform.gameplay(true);
+    return;
+  }
+  if (sheetMode === 'bonusEnd') { if (bonusReturn < LEVEL_COUNT) startLevel(bonusReturn); else openLevels(); return; }
   if (level.daily) { goMenu(); return; }
   const i = level.index;
+  if (pendingBonus) { startBonus(pendingBonus, i + 1); return; }
   if (i + 1 < LEVEL_COUNT) startLevel(i + 1); else openLevels();
 };
-$('win-retry').onclick = () => (level.daily ? startDaily() : startLevel(level.index));
+$('win-retry').onclick = () => {
+  if (sheetMode === 'offer') { finishBonus(); return; }
+  if (level.daily) startDaily(); else startLevel(level.index);
+};
 
 /* ------------------------------------------------------------------ menu */
 const mc = $('menu-bg'), mx = mc.getContext('2d');
@@ -531,6 +632,7 @@ $('game-back').onclick = () => {
   if (level && (mode === 'aim' || mode === 'fly' || mode === 'done')) {
     Analytics.event(level.daily ? 'daily_quit' : 'level_quit', { level: level.daily ? 'daily' : level.index + 1, tries: attempts, sec: Math.round((Date.now() - t0) / 1000) });
   }
+  if (level && level.bonus && mode !== 'won' && bonusCoins > 0) { save.coins += bonusCoins; persist(); Analytics.event('bonus_end', { coins: bonusCoins, quit: true }); }
   mode = 'aim'; goMenu();
 };
 $('btn-sound').onclick = () => { save.sound = !save.sound; persist(); Sound.setSfx(save.sound); renderMenu(); };
@@ -569,6 +671,8 @@ async function boot() {
   const def = makeDefaults();
   if (typeof save.coins !== 'number') save.coins = 0;
   for (const k of ['owned', 'equip', 'adProg', 'coinAds']) if (!save[k] || typeof save[k] !== 'object') save[k] = def[k];
+  if (typeof save.perfect !== 'number') save.perfect = 0;
+  if (!Array.isArray(save.milestones)) save.milestones = [];
   for (const cat of ['cannon', 'ball', 'dot']) {
     if (!Array.isArray(save.owned[cat])) save.owned[cat] = ['classic'];
     if (!save.owned[cat].includes(save.equip[cat])) save.equip[cat] = 'classic';
@@ -587,6 +691,8 @@ boot();
 
 window.__ot = {
   Sound, Platform, Analytics, startLevel, startDaily, fire, openShop: () => Shop.open(),
+  startBonus: () => startBonus({ id: 'test', text: 'test' }, 1),
+  get bonus() { return level && level.bonus ? { shots, bonusCoins, left: level.coins.filter((c) => !c.taken).length, total: level.coins.reduce((a, c) => a + c.v, 0) } : null; },
   setAngle(a) { angle = a; },
   get state() { return { mode, angle, hit, attempts, level, fidx }; },
   get save() { return save; },

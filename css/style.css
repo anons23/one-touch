@@ -129,3 +129,12 @@ button{font:inherit;color:inherit;cursor:pointer}
   #screen-shop.active{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);grid-template-rows:auto auto 1fr auto;grid-template-areas:"bar bar" "pv tabs" "pv grid" "foot grid";column-gap:16px}
   #screen-shop .bar{grid-area:bar}#shop-preview{grid-area:pv;align-self:start}.shop-tabs{grid-area:tabs}.shop-grid{grid-area:grid}.shop-footer{grid-area:foot}
 }
+
+/* ---------- bonus round ---------- */
+#stage{position:relative}
+.bonus-banner{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;pointer-events:none;z-index:3;animation:bonusIn 1.8s ease-out forwards}
+.bonus-banner b{font-size:clamp(30px,9vw,46px);font-weight:900;letter-spacing:.14em;color:#fff3c4;text-shadow:0 0 10px #ffb300,0 0 30px #ff8f00,0 0 60px #ff6f00}
+.bonus-banner span{font-size:15px;font-weight:700;color:#ffe9a6;text-shadow:0 0 8px rgba(0,0,0,.8)}
+@keyframes bonusIn{0%{opacity:0;transform:scale(.6)}15%{opacity:1;transform:scale(1.08)}25%{transform:scale(1)}75%{opacity:1}100%{opacity:0;transform:scale(1.05)}}
+.win-stars .coin{width:.9em;height:.9em}
+.win-stars .num{letter-spacing:0;color:#ffd54a}
